@@ -25,29 +25,14 @@ jobs:
           cd src
           zip -r ../lambda_function.zip .
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        run: terraform -chdir=terraform init
-
-      - name: Terraform Apply
-        run: terraform -chdir=terraform apply -auto-approve
-
-      - name: Get API Gateway URL and inject into frontend
-        run: |
-          API_URL=$(terraform -chdir=terraform output -raw kyc_api_endpoint)
-          sed -i "s|const API_URL = '.*'|const API_URL = '${API_URL}'|" frontend/index.html
-          echo "API URL injected: ${API_URL}"
-
-      - name: Deploy Lambda functions
+      - name: Deploy Lambda - ImageAnalysisHandler
         run: |
           aws lambda update-function-code \
             --function-name ImageAnalysisHandler \
             --zip-file fileb://lambda_function.zip
 
+      - name: Deploy Lambda - KYCVerificationHandler
+        run: |
           aws lambda update-function-code \
             --function-name KYCVerificationHandler \
             --zip-file fileb://lambda_function.zip
