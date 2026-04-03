@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ghana KYC Verification</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.10);
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 520px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 6px;
+    }
+
+    .description {
+      font-size: 0.82rem;
+      color: #888;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .upload-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 6px;
+    }
+
+    .upload-box {
+      border: 2px dashed #c0c8d8;
+      border-radius: 8px;
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .upload-box:hover { border-color: #4a6cf7; }
+    .upload-box.has-file { border-color: #22c55e; background: #f0fdf4; }
+
+    .upload-box input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-icon { font-size: 1.8rem; margin-bottom: 4px; }
+    .upload-hint { font-size: 0.8rem; color: #888; }
+    .file-name { font-size: 0.82rem; color: #16a34a; font-weight: 600; margin-top: 4px; }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #4a6cf7;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+
+    button:hover:not(:disabled) { background: #3a5ce5; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
+
+    .spinner {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    .result {
+      display: none;
+      margin-top: 24px;
+      border-radius: 10px;
+      padding: 24px;
+      border: 2px solid;
+    }
+
+    .result.pass { border-color: #22c55e; background: #f0fdf4; }
+    .result.fail { border-color: #ef4444; background: #fef2f2; }
+
+    .verdict {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .pass .verdict { color: #16a34a; }
+    .fail .verdict { color: #dc2626; }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.88rem;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .result-row:last-child { border-bottom: none; }
+    .result-label { color: #666; }
+    .result-value { font-weight: 600; color: #1a1a2e; text-align: right; max-width: 60%; word-break: break-all; }
+
+    .error-msg {
+      display: none;
+      margin-top: 16px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1><img src="https://flagcdn.com/24x18/gh.png" alt="Ghana" style="vertical-align:middle; margin-right:8px; border-radius:2px;">Ghana KYC Verification</h1>
+    <p class="subtitle">Automated Identity Verification &nbsp;&middot;&nbsp; Powered by Amazon Rekognition</p>
+    <p class="description">Upload your Ghana Card and a live selfie. The system extracts your name and ID number, verifies your face match, and returns a result in under 3 seconds.</p>
+
+    <div class="upload-group">
+      <label>Ghana Card (ID Document)</label>
+      <div class="upload-box" id="idBox">
+        <input type="file" id="idInput" accept="image/*" />
+        <div class="upload-icon">&#128196;</div>
+        <div class="upload-hint">Click to upload Ghana Card image</div>
+        <div class="file-name" id="idFileName"></div>
+      </div>
+    </div>
+
+    <div class="upload-group">
+      <label>Live Selfie</label>
+      <div class="upload-box" id="selfieBox">
+        <input type="file" id="selfieInput" accept="image/*" />
+        <div class="upload-icon">&#129333;</div>
+        <div class="upload-hint">Click to upload selfie photo</div>
+        <div class="file-name" id="selfieFileName"></div>
+      </div>
+    </div>
+
+    <button id="verifyBtn" disabled>Verify Identity</button>
+
+    <div class="spinner" id="spinner">Verifying identity, please wait...</div>
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="result" id="resultCard">
+      <div class="verdict" id="verdictText"></div>
+      <div class="result-row">
+        <span class="result-label">Face Match Confidence</span>
+        <span class="result-value" id="rConfidence"></span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Extracted Name</span>
+        <span class="result-value" id="rName"></span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Extracted ID Number</span>
+        <span class="result-value" id="rIdNum"></span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Session ID</span>
+        <span class="result-value" id="rSession"></span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Timestamp</span>
+        <span class="result-value" id="rTimestamp"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Replace this URL after running `terraform apply` ──────────────────
+    const API_URL = 'https://irurqhf9qj.execute-api.us-east-1.amazonaws.com//kyc';
+    // ──────────────────────────────────────────────────────────────────────
+
+    const idInput      = document.getElementById('idInput');
+    const selfieInput  = document.getElementById('selfieInput');
+    const verifyBtn    = document.getElementById('verifyBtn');
+    const spinner      = document.getElementById('spinner');
+    const resultCard   = document.getElementById('resultCard');
+    const errorMsg     = document.getElementById('errorMsg');
+
+    let idB64 = null, selfieB64 = null;
+
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function updateButton() {
+      verifyBtn.disabled = !(idB64 && selfieB64);
+    }
+
+    idInput.addEventListener('change', async () => {
+      if (idInput.files[0]) {
+        idB64 = await toBase64(idInput.files[0]);
+        document.getElementById('idFileName').textContent = idInput.files[0].name;
+        document.getElementById('idBox').classList.add('has-file');
+        updateButton();
+      }
+    });
+
+    selfieInput.addEventListener('change', async () => {
+      if (selfieInput.files[0]) {
+        selfieB64 = await toBase64(selfieInput.files[0]);
+        document.getElementById('selfieFileName').textContent = selfieInput.files[0].name;
+        document.getElementById('selfieBox').classList.add('has-file');
+        updateButton();
+      }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+      verifyBtn.disabled = true;
+      spinner.style.display = 'block';
+      resultCard.style.display = 'none';
+      errorMsg.style.display = 'none';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_image: idB64, selfie: selfieB64 })
+        });
+
+        const raw = await response.json();
+        spinner.style.display = 'none';
+
+        // Handle both direct response and API Gateway wrapped response
+        const data = (raw.body && typeof raw.body === 'string') ? JSON.parse(raw.body) : raw;
+
+        if (data.error) throw new Error(data.error);
+        if (!data.status) throw new Error('Unexpected response from server. Check Lambda logs.');
+
+        const isPASS = data.status === 'PASS';
+        resultCard.className = 'result ' + (isPASS ? 'pass' : 'fail');
+        document.getElementById('verdictText').textContent = isPASS ? 'PASS' : 'FAIL';
+        document.getElementById('rConfidence').textContent = (data.face_confidence || '0') + '%';
+        document.getElementById('rName').textContent = data.extracted_name || 'NOT FOUND';
+        document.getElementById('rIdNum').textContent = data.extracted_id_number || 'NOT FOUND';
+        document.getElementById('rSession').textContent = data.session_id || '-';
+        document.getElementById('rTimestamp').textContent = (data.timestamp || '') + ' UTC';
+        resultCard.style.display = 'block';
+
+      } catch (err) {
+        spinner.style.display = 'none';
+        errorMsg.textContent = 'Verification failed: ' + err.message;
+        errorMsg.style.display = 'block';
+      }
+
+      verifyBtn.disabled = false;
+    });
+  </script>
+</body>
+</html>

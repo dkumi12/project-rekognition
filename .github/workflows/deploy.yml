@@ -1,0 +1,62 @@
+name: Deploy Rekognition Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Package Lambda function
+        run: |
+          cd src
+          zip -r ../lambda_function.zip .
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform apply -auto-approve
+
+      - name: Get API Gateway URL and inject into frontend
+        run: |
+          API_URL=$(terraform -chdir=terraform output -raw kyc_api_endpoint)
+          sed -i "s|const API_URL = '.*'|const API_URL = '${API_URL}'|" frontend/index.html
+          echo "API URL injected: ${API_URL}"
+
+      - name: Deploy Lambda functions
+        run: |
+          aws lambda update-function-code \
+            --function-name ImageAnalysisHandler \
+            --zip-file fileb://lambda_function.zip
+
+          aws lambda update-function-code \
+            --function-name KYCVerificationHandler \
+            --zip-file fileb://lambda_function.zip
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 cp frontend/index.html s3://rekkyc-frontend/index.html \
+            --content-type "text/html" \
+            --cache-control "no-cache"
+
+      - name: Deployment complete
+        run: echo "All resources deployed successfully."
