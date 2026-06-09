@@ -71,6 +71,11 @@ resource "aws_iam_policy" "kyc_policy" {
       },
       {
         Effect   = "Allow"
+        Action   = ["textract:DetectDocumentText"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "${aws_s3_bucket.kyc_sessions.arn}/*"
       },

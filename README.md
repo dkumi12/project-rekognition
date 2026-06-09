@@ -246,7 +246,7 @@ The liveness check is a passive heuristic based on Rekognition `DetectFaces` att
 
 **Camera note:** Browser webcam capture requires a secure context, usually HTTPS or localhost. Use the CloudFront `frontend_https_url` for desktop live camera capture. The default S3 static website endpoint is HTTP, so browsers block direct webcam access there.
 
-**Note on image quality:** The Personal ID Number (GHA-XXXXXXXXX-X) is printed on the holographic section of the Ghana Card. For best results, photograph the card in good lighting and avoid flash glare on the holographic area. If the GHA number is unreadable, the system falls back to the Document Number printed below it.
+**Note on image quality:** The Personal ID Number (GHA-XXXXXXXXX-X) is printed on the holographic section of the Ghana Card. For best results, photograph the card in good lighting and avoid flash glare on the holographic area. The KYC handler uses Rekognition first, then Textract as a fallback when Rekognition misses the GHA number. If both services cannot read the Personal ID, the system falls back to the Document Number printed below it.
 
 ## Output Format
 

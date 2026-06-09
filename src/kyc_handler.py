@@ -9,6 +9,7 @@ import boto3
 
 
 rekognition = boto3.client("rekognition")
+textract = boto3.client("textract")
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 
@@ -124,7 +125,7 @@ def _get_session(session_id):
     return _response(200, item)
 
 
-def _extract_identity_fields(text_response):
+def _extract_identity_fields(text_response, allow_document_fallback=True):
     detected_lines = [
         t["DetectedText"]
         for t in text_response["TextDetections"]
@@ -271,13 +272,34 @@ def _extract_identity_fields(text_response):
 
     # Last resort: use the non-GHA document number only when the card's personal
     # ID could not be reconstructed from the OCR output.
-    if extracted_id == "NOT FOUND":
+    if allow_document_fallback and extracted_id == "NOT FOUND":
         extracted_id = find_document_number_after_label(detected_lines) or "NOT FOUND"
-    if extracted_id == "NOT FOUND":
+    if allow_document_fallback and extracted_id == "NOT FOUND":
         extracted_id = find_document_number_after_label(all_lines) or "NOT FOUND"
 
     print(f"Extracted ID: {extracted_id}")
     return extracted_name, extracted_id, detected_lines
+
+
+def _is_ghana_personal_id(value):
+    return bool(re.match(r"^GHA-\d{9}(?:-\d)?$", value or ""))
+
+
+def _textract_to_text_response(textract_response):
+    text_detections = []
+    for block in textract_response.get("Blocks", []):
+        block_type = block.get("BlockType")
+        text = block.get("Text")
+        if block_type not in {"LINE", "WORD"} or not text:
+            continue
+        text_detections.append(
+            {
+                "DetectedText": text,
+                "Type": block_type,
+                "Confidence": block.get("Confidence", 0),
+            }
+        )
+    return {"TextDetections": text_detections}
 
 
 def _verify_kyc(event):
@@ -307,6 +329,25 @@ def _verify_kyc(event):
 
     text_response = rekognition.detect_text(Image=id_image)
     extracted_name, extracted_id, detected_lines = _extract_identity_fields(text_response)
+
+    if not _is_ghana_personal_id(extracted_id):
+        try:
+            textract_response = textract.detect_document_text(
+                Document={"S3Object": {"Bucket": KYC_BUCKET, "Name": id_key}}
+            )
+            textract_text_response = _textract_to_text_response(textract_response)
+            textract_name, textract_id, textract_lines = _extract_identity_fields(
+                textract_text_response,
+                allow_document_fallback=False,
+            )
+            if _is_ghana_personal_id(textract_id):
+                extracted_id = textract_id
+                detected_lines = textract_lines or detected_lines
+                if extracted_name == "NOT FOUND" and textract_name != "NOT FOUND":
+                    extracted_name = textract_name
+                print(f"Using Textract Personal ID fallback: {extracted_id}")
+        except Exception as exc:
+            print(f"Textract Personal ID fallback failed: {str(exc)}")
 
     compare_response = rekognition.compare_faces(
         SourceImage=id_image,
