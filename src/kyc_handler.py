@@ -148,7 +148,7 @@ def _extract_identity_fields(text_response):
     skip_keywords = [
         "GHANA", "CARD", "REPUBLIC", "ECOWAS", "IDENTIT", "CEDEAO",
         "BILREV", "IDENTIDADE", "NATIONAL", "IDENTIFICATION", "AUTHORITY",
-        "SURNAME", "FORENAME", "PERSONAL ID", "NATIONALITY", "DATE OF",
+        "SURNAME", "FORENAME", "PERSONAL ID", "DOCUMENT NUMBER", "NATIONALITY", "DATE OF",
         "PLACE OF", "DATE OF BIRTH", "DATE OF ISSUE", "DATE OF EXPIRY",
         "DIGITAL SIGNATURE", "NIA", "SEX", "PIN", "GHA)", "ACCRA",
         "PREVIOUS", "NOMS", "PRECEDENT", "NOM DE", "PRENOM",
@@ -173,6 +173,40 @@ def _extract_identity_fields(text_response):
             clean.startswith("GHA") and re.search(r"\d{8,}", clean)
             or re.search(r"^[A-Z]{2}\d{5,9}$", clean)
         )
+
+    def canonicalize_gha(text):
+        upper = text.upper().replace("O", "0")
+        spaced_match = re.search(r"GHA[\W_]*([0-9]{8,10})(?:[\W_]*([0-9]))?", upper)
+        if spaced_match:
+            digits = spaced_match.group(1) + (spaced_match.group(2) or "")
+            if len(digits) >= 10:
+                return f"GHA-{digits[:9]}-{digits[9]}"
+            if len(digits) == 9:
+                return f"GHA-{digits}"
+
+        compact = re.sub(r"[^A-Z0-9]", "", upper)
+        compact_match = re.search(r"GHA([0-9]{9,10})", compact)
+        if compact_match:
+            digits = compact_match.group(1)
+            if len(digits) >= 10:
+                return f"GHA-{digits[:9]}-{digits[9]}"
+            return f"GHA-{digits}"
+
+        return None
+
+    def find_gha_value(values, window_size=6):
+        for value in values:
+            gha_value = canonicalize_gha(value)
+            if gha_value:
+                return gha_value
+
+        for i in range(len(values)):
+            combined = " ".join(values[i : i + window_size])
+            gha_value = canonicalize_gha(combined)
+            if gha_value:
+                return gha_value
+
+        return None
 
     def is_name_line(line):
         stripped = line.strip()
@@ -201,43 +235,46 @@ def _extract_identity_fields(text_response):
         extracted_name = fallback[0] if fallback else "NOT FOUND"
 
     extracted_id = "NOT FOUND"
-    id_label_keywords = ["PERSONAL ID", "ID NUMBER", "DOCUMENT NUMBER", "NUMERO", "HUMERO"]
+    personal_id_label_keywords = ["PERSONAL ID", "ID NUMBER", "HUMERO"]
+    document_label_keywords = ["DOCUMENT NUMBER", "NUMERO"]
 
-    def find_id_after_label(lines):
+    def find_gha_after_label(lines):
         for i, line in enumerate(lines):
-            if any(kw in line.upper() for kw in id_label_keywords):
-                for candidate in lines[i + 1 : min(i + 8, len(lines))]:
+            if any(kw in line.upper() for kw in personal_id_label_keywords):
+                nearby_lines = lines[i + 1 : min(i + 8, len(lines))]
+                gha_value = find_gha_value(nearby_lines)
+                if gha_value:
+                    return gha_value
+        return None
+
+    def find_document_number_after_label(lines):
+        for i, line in enumerate(lines):
+            if any(kw in line.upper() for kw in document_label_keywords):
+                for candidate in lines[i + 1 : min(i + 5, len(lines))]:
                     if is_date(candidate) or is_height_or_noise(candidate) or "/" in candidate:
                         continue
                     clean = re.sub(r"[^A-Z0-9]", "", candidate.upper().replace("O", "0"))
-                    if clean.startswith("GHA") and re.search(r"\d{6,}", clean):
-                        return candidate.strip()
                     if re.search(r"^[A-Z]{1,3}\d{5,}$", clean):
                         return candidate.strip()
         return None
 
-    for word in all_words:
-        clean = re.sub(r"[^A-Z0-9]", "", word.upper().replace("O", "0"))
-        if clean.startswith("GHA") and re.search(r"\d{4,}", clean):
-            match = re.match(r"(GHA[\d]+)", clean)
-            extracted_id = match.group(1) if match else clean
-            break
+    extracted_id = find_gha_value(all_lines) or "NOT FOUND"
+    if extracted_id == "NOT FOUND":
+        extracted_id = find_gha_value(detected_lines) or "NOT FOUND"
+    if extracted_id == "NOT FOUND":
+        extracted_id = find_gha_value(all_words) or "NOT FOUND"
 
     if extracted_id == "NOT FOUND":
-        for line in all_lines:
-            clean = re.sub(r"[^A-Z0-9]", "", line.upper().replace("O", "0"))
-            if clean.startswith("GHA") and re.search(r"\d{8,}", clean):
-                extracted_id = line.strip()
-                break
+        extracted_id = find_gha_after_label(detected_lines) or "NOT FOUND"
+    if extracted_id == "NOT FOUND":
+        extracted_id = find_gha_after_label(all_lines) or "NOT FOUND"
 
+    # Last resort: use the non-GHA document number only when the card's personal
+    # ID could not be reconstructed from the OCR output.
     if extracted_id == "NOT FOUND":
-        extracted_id = find_id_after_label(detected_lines) or "NOT FOUND"
+        extracted_id = find_document_number_after_label(detected_lines) or "NOT FOUND"
     if extracted_id == "NOT FOUND":
-        extracted_id = find_id_after_label(all_lines) or "NOT FOUND"
-    if extracted_id == "NOT FOUND":
-        id_number_lines = [line for line in detected_lines if is_id_number(line)]
-        if id_number_lines:
-            extracted_id = id_number_lines[0]
+        extracted_id = find_document_number_after_label(all_lines) or "NOT FOUND"
 
     print(f"Extracted ID: {extracted_id}")
     return extracted_name, extracted_id, detected_lines

@@ -290,7 +290,7 @@ The liveness check is a passive heuristic based on Rekognition `DetectFaces` att
         {"label": "Eyes open", "passed": true, "value": "True"}
     ],
     "extracted_name": "DAVID OSEI KUMI",
-    "extracted_id_number": "GHA0010763780",
+    "extracted_id_number": "GHA-001076378-0",
     "detected_text_lines": ["ECOWAS IDENTITY CARD", "KUMI", "DAVID OSEI", "..."]
 }
 ```
