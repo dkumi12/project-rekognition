@@ -224,7 +224,7 @@ Output files are stored in `rekanalysis-outputs` with the naming convention: `{i
 The web frontend accepts two images:
 
 1. **Ghana Card** - a photo of the front of the card
-2. **Live Selfie** - a photo of the cardholder's face
+2. **Live Selfie** - a photo of the cardholder's face, uploaded from file or captured from the device camera when the browser allows it
 
 The system performs the following checks:
 
@@ -242,6 +242,8 @@ curl https://xxxxxxxx.execute-api.us-east-1.amazonaws.com/kyc/{session_id}
 ```
 
 The liveness check is a passive heuristic based on Rekognition `DetectFaces` attributes. It is useful for testing and demos, but it is not the same as AWS's dedicated Face Liveness workflow.
+
+**Camera note:** Browser webcam capture requires a secure context, usually HTTPS or localhost. The default S3 static website endpoint is HTTP, so desktop live camera capture is blocked there by the browser. Mobile users can still use the selfie upload field to open the camera, and desktop live capture will work after hosting the frontend behind HTTPS, such as through CloudFront.
 
 **Note on image quality:** The Personal ID Number (GHA-XXXXXXXXX-X) is printed on the holographic section of the Ghana Card. For best results, photograph the card in good lighting and avoid flash glare on the holographic area. If the GHA number is unreadable, the system falls back to the Document Number printed below it.
 

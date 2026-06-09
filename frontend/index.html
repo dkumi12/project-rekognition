@@ -89,6 +89,49 @@
     .upload-hint { color: #748295; font-size: 0.82rem; }
     .file-name { margin-top: 5px; color: #148a54; font-size: 0.82rem; font-weight: 700; }
 
+    .selfie-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .secondary-btn {
+      min-height: 42px;
+      margin-top: 0;
+      background: #eef2f7;
+      color: #25344d;
+      border: 1px solid #c8d3e2;
+      font-size: 0.88rem;
+      font-weight: 800;
+    }
+
+    .secondary-btn:hover:not(:disabled) { background: #e2e9f2; }
+
+    .camera-panel {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #d9e1ec;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    video {
+      width: 100%;
+      max-height: 280px;
+      border-radius: 8px;
+      background: #0f172a;
+      object-fit: cover;
+    }
+
+    .camera-note {
+      margin-top: 8px;
+      color: #667383;
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
     button {
       width: 100%;
       min-height: 48px;
@@ -204,10 +247,18 @@
     <div class="upload-group">
       <label for="selfieInput">Live Selfie</label>
       <div class="upload-box" id="selfieBox">
-        <input type="file" id="selfieInput" accept="image/jpeg,image/png" />
+        <input type="file" id="selfieInput" accept="image/jpeg,image/png" capture="user" />
         <div class="upload-icon">&#128100;</div>
-        <div class="upload-hint">Face forward, eyes open, no sunglasses</div>
+        <div class="upload-hint">Upload or take a selfie on mobile</div>
         <div class="file-name" id="selfieFileName"></div>
+      </div>
+      <div class="selfie-actions">
+        <button type="button" class="secondary-btn" id="startCameraBtn">Use Camera</button>
+        <button type="button" class="secondary-btn" id="captureSelfieBtn" disabled>Capture Selfie</button>
+      </div>
+      <div class="camera-panel" id="cameraPanel">
+        <video id="cameraPreview" autoplay playsinline muted></video>
+        <p class="camera-note" id="cameraNote">Face forward, eyes open, no sunglasses.</p>
       </div>
     </div>
 
@@ -253,12 +304,18 @@
     const idInput = document.getElementById("idInput");
     const selfieInput = document.getElementById("selfieInput");
     const verifyBtn = document.getElementById("verifyBtn");
+    const startCameraBtn = document.getElementById("startCameraBtn");
+    const captureSelfieBtn = document.getElementById("captureSelfieBtn");
+    const cameraPanel = document.getElementById("cameraPanel");
+    const cameraPreview = document.getElementById("cameraPreview");
+    const cameraNote = document.getElementById("cameraNote");
     const spinner = document.getElementById("spinner");
     const resultCard = document.getElementById("resultCard");
     const errorMsg = document.getElementById("errorMsg");
 
     let idB64 = null;
     let selfieB64 = null;
+    let cameraStream = null;
 
     function showError(message) {
       errorMsg.textContent = message;
@@ -292,6 +349,22 @@
       verifyBtn.disabled = !(idB64 && selfieB64);
     }
 
+    function setSelfie(value, label) {
+      selfieB64 = value;
+      document.getElementById("selfieFileName").textContent = label || "";
+      document.getElementById("selfieBox").classList.toggle("has-file", Boolean(value));
+      updateButton();
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+      }
+      cameraStream = null;
+      cameraPreview.srcObject = null;
+      captureSelfieBtn.disabled = true;
+    }
+
     async function handleFile(input, boxId, fileNameId, setter) {
       const file = input.files[0];
       if (!file) return;
@@ -318,7 +391,53 @@
     });
 
     selfieInput.addEventListener("change", () => {
+      stopCamera();
       handleFile(selfieInput, "selfieBox", "selfieFileName", (value) => { selfieB64 = value; });
+    });
+
+    startCameraBtn.addEventListener("click", async () => {
+      clearError();
+      resultCard.style.display = "none";
+
+      if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        cameraPanel.style.display = "block";
+        cameraNote.textContent = "Live camera needs HTTPS in most browsers. On this HTTP S3 site, use the selfie upload box; on mobile it should open the camera. For desktop live capture, host the frontend behind HTTPS.";
+        showError("Live camera needs HTTPS. Use mobile camera upload here, or deploy the site behind HTTPS for desktop webcam capture.");
+        return;
+      }
+
+      try {
+        stopCamera();
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } },
+          audio: false
+        });
+        cameraPreview.srcObject = cameraStream;
+        cameraPanel.style.display = "block";
+        cameraNote.textContent = "Face forward, eyes open, no sunglasses.";
+        captureSelfieBtn.disabled = false;
+      } catch (err) {
+        showError("Could not open camera: " + err.message);
+      }
+    });
+
+    captureSelfieBtn.addEventListener("click", () => {
+      if (!cameraStream || !cameraPreview.videoWidth) {
+        showError("Camera is not ready yet.");
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = cameraPreview.videoWidth;
+      canvas.height = cameraPreview.videoHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+      setSelfie(dataUrl.split(",")[1], "Live camera selfie captured");
+      stopCamera();
+      cameraPanel.style.display = "none";
+      clearError();
     });
 
     verifyBtn.addEventListener("click", async () => {
