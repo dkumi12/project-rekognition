@@ -5,7 +5,7 @@ resource "aws_apigatewayv2_api" "kyc_api" {
 
   cors_configuration {
     allow_origins = ["*"]
-    allow_methods = ["POST", "OPTIONS"]
+    allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["Content-Type"]
   }
 }
@@ -22,6 +22,13 @@ resource "aws_apigatewayv2_integration" "kyc_integration" {
 resource "aws_apigatewayv2_route" "kyc_route" {
   api_id    = aws_apigatewayv2_api.kyc_api.id
   route_key = "POST /kyc"
+  target    = "integrations/${aws_apigatewayv2_integration.kyc_integration.id}"
+}
+
+# --- Route: GET /kyc/{session_id} ---
+resource "aws_apigatewayv2_route" "kyc_lookup_route" {
+  api_id    = aws_apigatewayv2_api.kyc_api.id
+  route_key = "GET /kyc/{session_id}"
   target    = "integrations/${aws_apigatewayv2_integration.kyc_integration.id}"
 }
 

@@ -2,178 +2,211 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ghana KYC Verification</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #f0f2f5;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
+      background: #eef2f6;
+      color: #172033;
+      font-family: "Segoe UI", Arial, sans-serif;
     }
 
     .card {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.10);
-      padding: 36px 40px;
       width: 100%;
-      max-width: 520px;
+      max-width: 560px;
+      padding: 32px;
+      background: #fff;
+      border: 1px solid #d9e1ec;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px rgba(20, 31, 50, 0.12);
     }
 
     h1 {
-      font-size: 1.4rem;
-      color: #1a1a2e;
-      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 1.35rem;
+      line-height: 1.2;
     }
 
+    h1 img { border-radius: 2px; }
+
     .subtitle {
-      font-size: 0.85rem;
-      color: #666;
       margin-bottom: 6px;
+      color: #526070;
+      font-size: 0.86rem;
     }
 
     .description {
-      font-size: 0.82rem;
-      color: #888;
       margin-bottom: 24px;
+      color: #667383;
+      font-size: 0.84rem;
       line-height: 1.5;
     }
 
-    .upload-group {
-      margin-bottom: 20px;
-    }
+    .upload-group { margin-bottom: 18px; }
 
     label {
       display: block;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 6px;
+      margin-bottom: 7px;
+      color: #29364a;
+      font-size: 0.86rem;
+      font-weight: 700;
     }
 
     .upload-box {
-      border: 2px dashed #c0c8d8;
-      border-radius: 8px;
+      position: relative;
+      min-height: 94px;
       padding: 18px;
+      border: 2px dashed #b9c5d6;
+      border-radius: 8px;
       text-align: center;
       cursor: pointer;
-      transition: border-color 0.2s;
-      position: relative;
+      transition: border-color 0.2s, background 0.2s;
     }
 
-    .upload-box:hover { border-color: #4a6cf7; }
-    .upload-box.has-file { border-color: #22c55e; background: #f0fdf4; }
+    .upload-box:hover { border-color: #315bdc; }
+    .upload-box.has-file { border-color: #148a54; background: #effaf4; }
 
     .upload-box input[type="file"] {
       position: absolute;
       inset: 0;
-      opacity: 0;
-      cursor: pointer;
       width: 100%;
       height: 100%;
+      opacity: 0;
+      cursor: pointer;
     }
 
-    .upload-icon { font-size: 1.8rem; margin-bottom: 4px; }
-    .upload-hint { font-size: 0.8rem; color: #888; }
-    .file-name { font-size: 0.82rem; color: #16a34a; font-weight: 600; margin-top: 4px; }
+    .upload-icon { margin-bottom: 4px; font-size: 1.8rem; }
+    .upload-hint { color: #748295; font-size: 0.82rem; }
+    .file-name { margin-top: 5px; color: #148a54; font-size: 0.82rem; font-weight: 700; }
 
     button {
       width: 100%;
-      padding: 14px;
-      background: #4a6cf7;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
+      min-height: 48px;
       margin-top: 8px;
+      padding: 13px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: #315bdc;
+      color: #fff;
+      font-size: 0.98rem;
+      font-weight: 800;
+      cursor: pointer;
       transition: background 0.2s;
     }
 
-    button:hover:not(:disabled) { background: #3a5ce5; }
-    button:disabled { background: #a0aec0; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: #264bc1; }
+    button:disabled { background: #9aa8ba; cursor: not-allowed; }
 
     .spinner {
       display: none;
-      text-align: center;
-      margin-top: 20px;
-      color: #666;
-      font-size: 0.9rem;
-    }
-
-    .result {
-      display: none;
-      margin-top: 24px;
-      border-radius: 10px;
-      padding: 24px;
-      border: 2px solid;
-    }
-
-    .result.pass { border-color: #22c55e; background: #f0fdf4; }
-    .result.fail { border-color: #ef4444; background: #fef2f2; }
-
-    .verdict {
-      font-size: 2rem;
-      font-weight: 800;
-      margin-bottom: 12px;
-    }
-
-    .pass .verdict { color: #16a34a; }
-    .fail .verdict { color: #dc2626; }
-
-    .result-row {
-      display: flex;
-      justify-content: space-between;
+      margin-top: 18px;
+      color: #526070;
       font-size: 0.88rem;
-      padding: 6px 0;
-      border-bottom: 1px solid rgba(0,0,0,0.06);
+      text-align: center;
     }
-
-    .result-row:last-child { border-bottom: none; }
-    .result-label { color: #666; }
-    .result-value { font-weight: 600; color: #1a1a2e; text-align: right; max-width: 60%; word-break: break-all; }
 
     .error-msg {
       display: none;
       margin-top: 16px;
-      background: #fef2f2;
-      border: 1px solid #fca5a5;
+      padding: 12px 14px;
+      border: 1px solid #f3a2a2;
       border-radius: 8px;
-      padding: 12px 16px;
+      background: #fff1f1;
+      color: #b42318;
       font-size: 0.85rem;
-      color: #dc2626;
+    }
+
+    .result {
+      display: none;
+      margin-top: 22px;
+      padding: 22px;
+      border: 2px solid;
+      border-radius: 8px;
+    }
+
+    .result.pass { border-color: #16a05d; background: #f0fbf5; }
+    .result.fail { border-color: #d92d20; background: #fff3f2; }
+
+    .verdict {
+      margin-bottom: 12px;
+      font-size: 1.9rem;
+      font-weight: 900;
+    }
+
+    .pass .verdict { color: #148a54; }
+    .fail .verdict { color: #b42318; }
+
+    .result-row,
+    .check-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(20, 31, 50, 0.08);
+      font-size: 0.86rem;
+    }
+
+    .result-row:last-of-type,
+    .check-item:last-child { border-bottom: none; }
+
+    .result-label { color: #5b6878; }
+    .result-value {
+      max-width: 60%;
+      color: #172033;
+      font-weight: 800;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .check-list {
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(20, 31, 50, 0.12);
+    }
+
+    .check-pass { color: #148a54; font-weight: 900; }
+    .check-fail { color: #b42318; font-weight: 900; }
+
+    @media (max-width: 520px) {
+      body { padding: 12px; align-items: flex-start; }
+      .card { padding: 22px; }
+      .result-row, .check-item { display: block; }
+      .result-value { display: block; max-width: 100%; margin-top: 3px; text-align: left; }
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1><img src="https://flagcdn.com/24x18/gh.png" alt="Ghana" style="vertical-align:middle; margin-right:8px; border-radius:2px;">Ghana KYC Verification</h1>
-    <p class="subtitle">Automated Identity Verification &nbsp;&middot;&nbsp; Powered by Amazon Rekognition</p>
-    <p class="description">Upload your Ghana Card and a live selfie. The system extracts your name and ID number, verifies your face match, and returns a result in under 3 seconds.</p>
+  <main class="card">
+    <h1><img src="https://flagcdn.com/24x18/gh.png" alt="Ghana flag" width="24" height="18" />Ghana KYC Verification</h1>
+    <p class="subtitle">Automated Identity Verification &middot; Powered by Amazon Rekognition</p>
+    <p class="description">Upload a Ghana Card and a live selfie. The check extracts identity text, compares the faces, and evaluates selfie quality for passive liveness.</p>
 
     <div class="upload-group">
-      <label>Ghana Card (ID Document)</label>
+      <label for="idInput">Ghana Card (ID Document)</label>
       <div class="upload-box" id="idBox">
-        <input type="file" id="idInput" accept="image/*" />
+        <input type="file" id="idInput" accept="image/jpeg,image/png" />
         <div class="upload-icon">&#128196;</div>
-        <div class="upload-hint">Click to upload Ghana Card image</div>
+        <div class="upload-hint">JPEG or PNG, 5MB max</div>
         <div class="file-name" id="idFileName"></div>
       </div>
     </div>
 
     <div class="upload-group">
-      <label>Live Selfie</label>
+      <label for="selfieInput">Live Selfie</label>
       <div class="upload-box" id="selfieBox">
-        <input type="file" id="selfieInput" accept="image/*" />
-        <div class="upload-icon">&#129333;</div>
-        <div class="upload-hint">Click to upload selfie photo</div>
+        <input type="file" id="selfieInput" accept="image/jpeg,image/png" />
+        <div class="upload-icon">&#128100;</div>
+        <div class="upload-hint">Face forward, eyes open, no sunglasses</div>
         <div class="file-name" id="selfieFileName"></div>
       </div>
     </div>
@@ -183,11 +216,15 @@
     <div class="spinner" id="spinner">Verifying identity, please wait...</div>
     <div class="error-msg" id="errorMsg"></div>
 
-    <div class="result" id="resultCard">
+    <section class="result" id="resultCard">
       <div class="verdict" id="verdictText"></div>
       <div class="result-row">
         <span class="result-label">Face Match Confidence</span>
         <span class="result-value" id="rConfidence"></span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Liveness Check</span>
+        <span class="result-value" id="rLiveness"></span>
       </div>
       <div class="result-row">
         <span class="result-label">Extracted Name</span>
@@ -205,27 +242,47 @@
         <span class="result-label">Timestamp</span>
         <span class="result-value" id="rTimestamp"></span>
       </div>
-    </div>
-  </div>
+      <div class="check-list" id="livenessChecks"></div>
+    </section>
+  </main>
 
   <script>
-    // ── Replace this URL after running `terraform apply` ──────────────────
-    const API_URL = 'https://irurqhf9qj.execute-api.us-east-1.amazonaws.com//kyc';
-    // ──────────────────────────────────────────────────────────────────────
+    const API_URL = "https://irurqhf9qj.execute-api.us-east-1.amazonaws.com/kyc";
+    const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
-    const idInput      = document.getElementById('idInput');
-    const selfieInput  = document.getElementById('selfieInput');
-    const verifyBtn    = document.getElementById('verifyBtn');
-    const spinner      = document.getElementById('spinner');
-    const resultCard   = document.getElementById('resultCard');
-    const errorMsg     = document.getElementById('errorMsg');
+    const idInput = document.getElementById("idInput");
+    const selfieInput = document.getElementById("selfieInput");
+    const verifyBtn = document.getElementById("verifyBtn");
+    const spinner = document.getElementById("spinner");
+    const resultCard = document.getElementById("resultCard");
+    const errorMsg = document.getElementById("errorMsg");
 
-    let idB64 = null, selfieB64 = null;
+    let idB64 = null;
+    let selfieB64 = null;
+
+    function showError(message) {
+      errorMsg.textContent = message;
+      errorMsg.style.display = "block";
+    }
+
+    function clearError() {
+      errorMsg.style.display = "none";
+      errorMsg.textContent = "";
+    }
+
+    function validateFile(file) {
+      if (!["image/jpeg", "image/png"].includes(file.type)) {
+        throw new Error("Please upload only JPEG or PNG images.");
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        throw new Error("Each image must be 5MB or smaller.");
+      }
+    }
 
     function toBase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onload = () => resolve(reader.result.split(",")[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
@@ -235,63 +292,82 @@
       verifyBtn.disabled = !(idB64 && selfieB64);
     }
 
-    idInput.addEventListener('change', async () => {
-      if (idInput.files[0]) {
-        idB64 = await toBase64(idInput.files[0]);
-        document.getElementById('idFileName').textContent = idInput.files[0].name;
-        document.getElementById('idBox').classList.add('has-file');
-        updateButton();
+    async function handleFile(input, boxId, fileNameId, setter) {
+      const file = input.files[0];
+      if (!file) return;
+
+      try {
+        validateFile(file);
+        setter(await toBase64(file));
+        document.getElementById(fileNameId).textContent = file.name;
+        document.getElementById(boxId).classList.add("has-file");
+        clearError();
+      } catch (err) {
+        setter(null);
+        input.value = "";
+        document.getElementById(fileNameId).textContent = "";
+        document.getElementById(boxId).classList.remove("has-file");
+        showError(err.message);
       }
+
+      updateButton();
+    }
+
+    idInput.addEventListener("change", () => {
+      handleFile(idInput, "idBox", "idFileName", (value) => { idB64 = value; });
     });
 
-    selfieInput.addEventListener('change', async () => {
-      if (selfieInput.files[0]) {
-        selfieB64 = await toBase64(selfieInput.files[0]);
-        document.getElementById('selfieFileName').textContent = selfieInput.files[0].name;
-        document.getElementById('selfieBox').classList.add('has-file');
-        updateButton();
-      }
+    selfieInput.addEventListener("change", () => {
+      handleFile(selfieInput, "selfieBox", "selfieFileName", (value) => { selfieB64 = value; });
     });
 
-    verifyBtn.addEventListener('click', async () => {
+    verifyBtn.addEventListener("click", async () => {
       verifyBtn.disabled = true;
-      spinner.style.display = 'block';
-      resultCard.style.display = 'none';
-      errorMsg.style.display = 'none';
+      spinner.style.display = "block";
+      resultCard.style.display = "none";
+      clearError();
 
       try {
         const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id_image: idB64, selfie: selfieB64 })
         });
 
         const raw = await response.json();
-        spinner.style.display = 'none';
-
-        // Handle both direct response and API Gateway wrapped response
-        const data = (raw.body && typeof raw.body === 'string') ? JSON.parse(raw.body) : raw;
+        const data = raw.body && typeof raw.body === "string" ? JSON.parse(raw.body) : raw;
 
         if (data.error) throw new Error(data.error);
-        if (!data.status) throw new Error('Unexpected response from server. Check Lambda logs.');
+        if (!data.status) throw new Error("Unexpected response from server. Check Lambda logs.");
 
-        const isPASS = data.status === 'PASS';
-        resultCard.className = 'result ' + (isPASS ? 'pass' : 'fail');
-        document.getElementById('verdictText').textContent = isPASS ? 'PASS' : 'FAIL';
-        document.getElementById('rConfidence').textContent = (data.face_confidence || '0') + '%';
-        document.getElementById('rName').textContent = data.extracted_name || 'NOT FOUND';
-        document.getElementById('rIdNum').textContent = data.extracted_id_number || 'NOT FOUND';
-        document.getElementById('rSession').textContent = data.session_id || '-';
-        document.getElementById('rTimestamp').textContent = (data.timestamp || '') + ' UTC';
-        resultCard.style.display = 'block';
+        const isPass = data.status === "PASS";
+        resultCard.className = "result " + (isPass ? "pass" : "fail");
+        document.getElementById("verdictText").textContent = isPass ? "PASS" : "FAIL";
+        document.getElementById("rConfidence").textContent = (data.face_confidence || "0") + "%";
+        document.getElementById("rLiveness").textContent = (data.liveness_status || "UNKNOWN") + " (" + (data.liveness_score || "0") + "%)";
+        document.getElementById("rName").textContent = data.extracted_name || "NOT FOUND";
+        document.getElementById("rIdNum").textContent = data.extracted_id_number || "NOT FOUND";
+        document.getElementById("rSession").textContent = data.session_id || "-";
+        document.getElementById("rTimestamp").textContent = (data.timestamp || "") + " UTC";
 
+        const livenessChecks = document.getElementById("livenessChecks");
+        livenessChecks.innerHTML = "";
+        (data.liveness_checks || []).forEach((check) => {
+          const item = document.createElement("div");
+          const statusClass = check.passed ? "check-pass" : "check-fail";
+          item.className = "check-item";
+          item.innerHTML = "<span>" + check.label + "</span><span class=\"" + statusClass + "\">" + (check.passed ? "PASS" : "FAIL") + "</span>";
+          livenessChecks.appendChild(item);
+        });
+
+        resultCard.style.display = "block";
       } catch (err) {
-        spinner.style.display = 'none';
-        errorMsg.textContent = 'Verification failed: ' + err.message;
-        errorMsg.style.display = 'block';
+        showError("Verification failed: " + err.message);
+      } finally {
+        spinner.style.display = "none";
+        verifyBtn.disabled = false;
+        updateButton();
       }
-
-      verifyBtn.disabled = false;
     });
   </script>
 </body>

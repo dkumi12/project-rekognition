@@ -53,7 +53,7 @@ resource "aws_iam_role_policy_attachment" "lambda_attach" {
   policy_arn = aws_iam_policy.lambda_policy.arn
 }
 
-# --- Policy: KYC Lambda (CompareFaces + KYC S3 bucket + DynamoDB) ---
+# --- Policy: KYC Lambda (face checks + KYC S3 bucket + DynamoDB) ---
 resource "aws_iam_policy" "kyc_policy" {
   name        = "rekognition_kyc_policy"
   description = "Permissions for KYC Lambda: CompareFaces, KYC S3 bucket, DynamoDB"
@@ -61,8 +61,12 @@ resource "aws_iam_policy" "kyc_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["rekognition:CompareFaces", "rekognition:DetectText"]
+        Effect = "Allow"
+        Action = [
+          "rekognition:CompareFaces",
+          "rekognition:DetectFaces",
+          "rekognition:DetectText"
+        ]
         Resource = "*"
       },
       {

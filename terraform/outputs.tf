@@ -1,6 +1,6 @@
 # --- Printed after `terraform apply` ---
 output "kyc_api_endpoint" {
-  value       = "${aws_apigatewayv2_stage.kyc_stage.invoke_url}/kyc"
+  value       = "${trimsuffix(aws_apigatewayv2_stage.kyc_stage.invoke_url, "/")}/kyc"
   description = "Paste this URL into frontend/index.html as API_URL"
 }
 

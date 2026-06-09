@@ -65,7 +65,7 @@ A serverless image analysis and identity verification pipeline built on AWS. The
 | AWS Lambda | Two serverless functions: ImageAnalysisHandler and KYCVerificationHandler |
 | Amazon S3 | Four buckets for image inputs, analysis outputs, KYC sessions, and frontend hosting |
 | Amazon DynamoDB | Stores KYC verification results with session tracking |
-| API Gateway | HTTP API exposing POST /kyc endpoint with CORS |
+| API Gateway | HTTP API exposing POST /kyc and GET /kyc/{session_id} endpoints with CORS |
 | AWS IAM | Least-privilege execution role for Lambda functions |
 | Amazon CloudWatch | Log groups with 14-day retention and error alarms for both Lambda functions |
 
@@ -73,26 +73,28 @@ A serverless image analysis and identity verification pipeline built on AWS. The
 
 ```
 rekognition/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml            # CI/CD pipeline (GitHub Actions)
-├── src/
-│   ├── app.py                    # Lambda: general image analysis handler
-│   └── kyc_handler.py            # Lambda: KYC identity verification handler
-├── frontend/
-│   └── index.html                # Web UI for Ghana Card verification
-├── terraform/
-│   ├── providers.tf              # AWS provider configuration (us-east-1)
-│   ├── lambda.tf                 # Lambda function definitions
-│   ├── api_gateway.tf            # HTTP API and route configuration
-│   ├── s3.tf                     # S3 bucket definitions and event triggers
-│   ├── dynamodb.tf               # KYC results table
-│   ├── iam.tf                    # IAM roles and policies
-│   ├── cloudwatch.tf             # Log groups and error alarms
-│   └── outputs.tf                # API URL and frontend URL outputs
-├── demo_script.md                # Presentation demo walkthrough
-├── PROJECT_GUIDE.html            # Build guide and completion checklist
-└── README.md                     # This file
+|-- .github/
+|   `-- workflows/
+|       `-- deploy.yml            # CI/CD pipeline (GitHub Actions)
+|-- docs/
+|   |-- guides/                   # Demo script and build guide artifacts
+|   |-- marketing/                # LinkedIn and marketing presentation content
+|   `-- presentations/            # Project presentation exports
+|-- src/
+|   |-- app.py                    # Lambda: general image analysis handler
+|   `-- kyc_handler.py            # Lambda: KYC identity verification handler
+|-- frontend/
+|   `-- index.html                # Web UI for Ghana Card verification
+|-- terraform/
+|   |-- providers.tf              # AWS provider configuration (us-east-1)
+|   |-- lambda.tf                 # Lambda function definitions
+|   |-- api_gateway.tf            # HTTP API and route configuration
+|   |-- s3.tf                     # S3 bucket definitions and event triggers
+|   |-- dynamodb.tf               # KYC results table
+|   |-- iam.tf                    # IAM roles and policies
+|   |-- cloudwatch.tf             # Log groups and error alarms
+|   `-- outputs.tf                # API URL and frontend URL outputs
+`-- README.md                     # This file
 ```
 
 ## Prerequisites
@@ -168,7 +170,7 @@ aws s3 cp frontend/index.html s3://rekkyc-frontend/index.html \
 
 ### Step 7: Test the Pipeline
 
-**Test 1 — General image analysis:**
+**Test 1 - General image analysis:**
 
 Upload any JPEG or PNG image to the input bucket:
 
@@ -182,9 +184,9 @@ Verify the output JSON appears in the output bucket:
 aws s3 ls s3://rekanalysis-outputs/
 ```
 
-**Test 2 — KYC verification:**
+**Test 2 - KYC verification:**
 
-Open the `frontend_url` from Step 4 in a browser. Upload a Ghana Card image and a selfie. The system should return a PASS or FAIL verdict with the extracted name, ID number, and face match confidence.
+Open the `frontend_url` from Step 4 in a browser. Upload a Ghana Card image and a selfie. The system should return a PASS or FAIL verdict with the extracted name, ID number, face match confidence, and liveness check result.
 
 ## CI/CD Pipeline
 
@@ -221,16 +223,25 @@ Output files are stored in `rekanalysis-outputs` with the naming convention: `{i
 
 The web frontend accepts two images:
 
-1. **Ghana Card** — a photo of the front of the card
-2. **Live Selfie** — a photo of the cardholder's face
+1. **Ghana Card** - a photo of the front of the card
+2. **Live Selfie** - a photo of the cardholder's face
 
 The system performs the following checks:
 
 1. Validates that both images contain detectable faces
 2. Extracts the cardholder's name and ID number from the card via OCR
 3. Compares the face on the card with the selfie using a 70% similarity threshold
-4. Returns PASS if the faces match, FAIL if they do not
-5. Stores the result in DynamoDB for audit purposes
+4. Runs a passive liveness/quality check on the selfie: one face, eyes open, no sunglasses, adequate sharpness and brightness, and a reasonable face angle
+5. Returns PASS only when both the face match and liveness checks pass
+6. Stores the result in DynamoDB for audit purposes
+
+You can retrieve a stored result with:
+
+```bash
+curl https://xxxxxxxx.execute-api.us-east-1.amazonaws.com/kyc/{session_id}
+```
+
+The liveness check is a passive heuristic based on Rekognition `DetectFaces` attributes. It is useful for testing and demos, but it is not the same as AWS's dedicated Face Liveness workflow.
 
 **Note on image quality:** The Personal ID Number (GHA-XXXXXXXXX-X) is printed on the holographic section of the Ghana Card. For best results, photograph the card in good lighting and avoid flash glare on the holographic area. If the GHA number is unreadable, the system falls back to the Document Number printed below it.
 
@@ -267,7 +278,14 @@ The system performs the following checks:
     "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "timestamp": "2026-04-03T14:30:00.000000",
     "status": "PASS",
+    "face_match_status": "PASS",
     "face_confidence": "98.39",
+    "liveness_status": "PASS",
+    "liveness_score": "100",
+    "liveness_checks": [
+        {"label": "Single face in selfie", "passed": true, "value": "1 face detected"},
+        {"label": "Eyes open", "passed": true, "value": "True"}
+    ],
     "extracted_name": "DAVID OSEI KUMI",
     "extracted_id_number": "GHA0010763780",
     "detected_text_lines": ["ECOWAS IDENTITY CARD", "KUMI", "DAVID OSEI", "..."]

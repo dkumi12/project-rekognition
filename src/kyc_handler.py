@@ -1,283 +1,330 @@
-import json
-import boto3
-import os
 import base64
+import json
+import os
+import re
 import uuid
 from datetime import datetime
 
-rekognition = boto3.client('rekognition')
-dynamodb = boto3.resource('dynamodb')
-s3 = boto3.client('s3')
-
-KYC_BUCKET = os.environ['KYC_BUCKET']
-KYC_TABLE = os.environ['KYC_TABLE']
+import boto3
 
 
-def _error_response(msg):
+rekognition = boto3.client("rekognition")
+dynamodb = boto3.resource("dynamodb")
+s3 = boto3.client("s3")
+
+KYC_BUCKET = os.environ["KYC_BUCKET"]
+KYC_TABLE = os.environ["KYC_TABLE"]
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Content-Type": "application/json",
+}
+
+
+def _response(status_code, payload):
     return {
-        'statusCode': 200,
-        'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
-        'body': json.dumps({'error': msg})
+        "statusCode": status_code,
+        "headers": CORS_HEADERS,
+        "body": json.dumps(payload),
     }
+
+
+def _error_response(msg, status_code=400):
+    return _response(status_code, {"error": msg})
+
+
+def _decode_image(field_name, image_b64):
+    if not image_b64:
+        raise ValueError(f"Missing required field: {field_name}.")
+
+    try:
+        image_bytes = base64.b64decode(image_b64, validate=True)
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be a valid base64 image.") from exc
+
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ValueError(f"{field_name} is too large. Max allowed is 5MB.")
+
+    is_jpeg = image_bytes.startswith(b"\xff\xd8\xff")
+    is_png = image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    if not (is_jpeg or is_png):
+        raise ValueError(f"{field_name} must be a JPEG or PNG image.")
+
+    return image_bytes
+
+
+def _largest_face(face_details):
+    return max(
+        face_details,
+        key=lambda face: face.get("BoundingBox", {}).get("Width", 0)
+        * face.get("BoundingBox", {}).get("Height", 0),
+    )
+
+
+def _check(label, passed, value):
+    return {"label": label, "passed": bool(passed), "value": str(value)}
+
+
+def _assess_passive_liveness(face_details):
+    if len(face_details) != 1:
+        return {
+            "status": "FAIL",
+            "score": "0",
+            "checks": [
+                _check("Single face in selfie", False, f"{len(face_details)} faces detected")
+            ],
+        }
+
+    face = _largest_face(face_details)
+    quality = face.get("Quality", {})
+    pose = face.get("Pose", {})
+    confidence = face.get("Confidence", 0)
+    eyes_open = face.get("EyesOpen", {})
+    sunglasses = face.get("Sunglasses", {})
+    face_occluded = face.get("FaceOccluded", {})
+
+    checks = [
+        _check("Single face in selfie", True, "1 face detected"),
+        _check("Face detection confidence", confidence >= 95, round(confidence, 2)),
+        _check("Eyes open", eyes_open.get("Value") is True and eyes_open.get("Confidence", 0) >= 80, eyes_open.get("Value")),
+        _check("No sunglasses", sunglasses.get("Value") is not True, sunglasses.get("Value")),
+        _check("Sharpness", quality.get("Sharpness", 0) >= 40, round(quality.get("Sharpness", 0), 2)),
+        _check("Brightness", 35 <= quality.get("Brightness", 0) <= 95, round(quality.get("Brightness", 0), 2)),
+        _check("Face centered", abs(pose.get("Yaw", 0)) <= 30 and abs(pose.get("Pitch", 0)) <= 25, f"yaw {round(pose.get('Yaw', 0), 2)}, pitch {round(pose.get('Pitch', 0), 2)}"),
+        _check("Not heavily tilted", abs(pose.get("Roll", 0)) <= 25, round(pose.get("Roll", 0), 2)),
+    ]
+
+    if face_occluded:
+        checks.append(
+            _check(
+                "Face not occluded",
+                face_occluded.get("Value") is not True,
+                face_occluded.get("Value"),
+            )
+        )
+
+    passed_count = sum(1 for item in checks if item["passed"])
+    score = round((passed_count / len(checks)) * 100)
+    required_pass = all(item["passed"] for item in checks)
+
+    return {
+        "status": "PASS" if required_pass else "FAIL",
+        "score": str(score),
+        "checks": checks,
+    }
+
+
+def _get_session(session_id):
+    item = dynamodb.Table(KYC_TABLE).get_item(Key={"session_id": session_id}).get("Item")
+    if not item:
+        return _error_response("Session not found.", 404)
+    return _response(200, item)
+
+
+def _extract_identity_fields(text_response):
+    detected_lines = [
+        t["DetectedText"]
+        for t in text_response["TextDetections"]
+        if t["Type"] == "LINE" and t["Confidence"] > 80
+    ]
+    all_lines = [
+        t["DetectedText"]
+        for t in text_response["TextDetections"]
+        if t["Type"] == "LINE" and t["Confidence"] > 50
+    ]
+    all_words = [
+        t["DetectedText"]
+        for t in text_response["TextDetections"]
+        if t["Type"] == "WORD" and t["Confidence"] > 40
+    ]
+
+    print(f"Detected lines (80%+): {detected_lines}")
+    print(f"All lines (50%+): {all_lines}")
+    print(f"All words (40%+): {all_words}")
+
+    skip_keywords = [
+        "GHANA", "CARD", "REPUBLIC", "ECOWAS", "IDENTIT", "CEDEAO",
+        "BILREV", "IDENTIDADE", "NATIONAL", "IDENTIFICATION", "AUTHORITY",
+        "SURNAME", "FORENAME", "PERSONAL ID", "NATIONALITY", "DATE OF",
+        "PLACE OF", "DATE OF BIRTH", "DATE OF ISSUE", "DATE OF EXPIRY",
+        "DIGITAL SIGNATURE", "NIA", "SEX", "PIN", "GHA)", "ACCRA",
+        "PREVIOUS", "NOMS", "PRECEDENT", "NOM DE", "PRENOM",
+        "LIEU", "SIGNATURE", "HEIGHT", "WEIGHT", "ISSUANCE",
+        "RESIDENT", "PROFESSION", "MARITAL", "RELIGION", "CARTE",
+    ]
+
+    def is_header(line):
+        upper = line.upper()
+        return "/" in line or any(kw in upper for kw in skip_keywords)
+
+    def is_date(line):
+        return bool(re.search(r"\d{2}/\d{2}/\d{4}", line.strip()))
+
+    def is_height_or_noise(line):
+        stripped = line.strip()
+        return bool(re.search(r"^\d+\.\d+$", stripped) or re.search(r"^\d{5,}$", stripped) or len(stripped) <= 1)
+
+    def is_id_number(line):
+        clean = re.sub(r"[^A-Z0-9]", "", line.upper().strip().replace("O", "0"))
+        return bool(
+            clean.startswith("GHA") and re.search(r"\d{8,}", clean)
+            or re.search(r"^[A-Z]{2}\d{5,9}$", clean)
+        )
+
+    def is_name_line(line):
+        stripped = line.strip()
+        if len(stripped) < 2 or is_header(line) or is_date(line) or is_height_or_noise(line) or is_id_number(line):
+            return False
+        return sum(c.isalpha() for c in stripped) / len(stripped) >= 0.8
+
+    name_lines = [line for line in detected_lines if is_name_line(line)]
+    print(f"Name candidate lines: {name_lines}")
+
+    if len(name_lines) >= 2:
+        extracted_name = f"{name_lines[1]} {name_lines[0]}"
+    elif len(name_lines) == 1:
+        extracted_name = name_lines[0]
+    else:
+        fallback = [
+            line
+            for line in all_lines
+            if not is_header(line)
+            and not is_date(line)
+            and not is_height_or_noise(line)
+            and "/" not in line
+            and sum(c.isalpha() for c in line) >= 4
+        ]
+        fallback.sort(key=lambda line: sum(c.isalpha() for c in line), reverse=True)
+        extracted_name = fallback[0] if fallback else "NOT FOUND"
+
+    extracted_id = "NOT FOUND"
+    id_label_keywords = ["PERSONAL ID", "ID NUMBER", "DOCUMENT NUMBER", "NUMERO", "HUMERO"]
+
+    def find_id_after_label(lines):
+        for i, line in enumerate(lines):
+            if any(kw in line.upper() for kw in id_label_keywords):
+                for candidate in lines[i + 1 : min(i + 8, len(lines))]:
+                    if is_date(candidate) or is_height_or_noise(candidate) or "/" in candidate:
+                        continue
+                    clean = re.sub(r"[^A-Z0-9]", "", candidate.upper().replace("O", "0"))
+                    if clean.startswith("GHA") and re.search(r"\d{6,}", clean):
+                        return candidate.strip()
+                    if re.search(r"^[A-Z]{1,3}\d{5,}$", clean):
+                        return candidate.strip()
+        return None
+
+    for word in all_words:
+        clean = re.sub(r"[^A-Z0-9]", "", word.upper().replace("O", "0"))
+        if clean.startswith("GHA") and re.search(r"\d{4,}", clean):
+            match = re.match(r"(GHA[\d]+)", clean)
+            extracted_id = match.group(1) if match else clean
+            break
+
+    if extracted_id == "NOT FOUND":
+        for line in all_lines:
+            clean = re.sub(r"[^A-Z0-9]", "", line.upper().replace("O", "0"))
+            if clean.startswith("GHA") and re.search(r"\d{8,}", clean):
+                extracted_id = line.strip()
+                break
+
+    if extracted_id == "NOT FOUND":
+        extracted_id = find_id_after_label(detected_lines) or "NOT FOUND"
+    if extracted_id == "NOT FOUND":
+        extracted_id = find_id_after_label(all_lines) or "NOT FOUND"
+    if extracted_id == "NOT FOUND":
+        id_number_lines = [line for line in detected_lines if is_id_number(line)]
+        if id_number_lines:
+            extracted_id = id_number_lines[0]
+
+    print(f"Extracted ID: {extracted_id}")
+    return extracted_name, extracted_id, detected_lines
+
+
+def _verify_kyc(event):
+    body = json.loads(event.get("body") or "{}")
+    id_bytes = _decode_image("id_image", body.get("id_image"))
+    selfie_bytes = _decode_image("selfie", body.get("selfie"))
+
+    session_id = str(uuid.uuid4())
+    id_key = f"sessions/{session_id}/id.jpg"
+    selfie_key = f"sessions/{session_id}/selfie.jpg"
+
+    s3.put_object(Bucket=KYC_BUCKET, Key=id_key, Body=id_bytes)
+    s3.put_object(Bucket=KYC_BUCKET, Key=selfie_key, Body=selfie_bytes)
+
+    id_image = {"S3Object": {"Bucket": KYC_BUCKET, "Name": id_key}}
+    selfie_image = {"S3Object": {"Bucket": KYC_BUCKET, "Name": selfie_key}}
+
+    id_faces = rekognition.detect_faces(Image=id_image, Attributes=["ALL"])
+    selfie_faces = rekognition.detect_faces(Image=selfie_image, Attributes=["ALL"])
+
+    if not id_faces["FaceDetails"]:
+        return _error_response("No face detected in ID card image. Use a clear photo ID.")
+    if not selfie_faces["FaceDetails"]:
+        return _error_response("No face detected in selfie. Ensure your face is clearly visible.")
+
+    liveness = _assess_passive_liveness(selfie_faces["FaceDetails"])
+
+    text_response = rekognition.detect_text(Image=id_image)
+    extracted_name, extracted_id, detected_lines = _extract_identity_fields(text_response)
+
+    compare_response = rekognition.compare_faces(
+        SourceImage=id_image,
+        TargetImage=selfie_image,
+        SimilarityThreshold=70,
+    )
+    face_matches = compare_response.get("FaceMatches", [])
+    face_confidence = round(face_matches[0]["Similarity"], 2) if face_matches else 0.0
+    face_match_status = "PASS" if face_confidence >= 70.0 else "FAIL"
+    status = "PASS" if face_match_status == "PASS" and liveness["status"] == "PASS" else "FAIL"
+
+    result = {
+        "session_id": session_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "status": status,
+        "face_match_status": face_match_status,
+        "face_confidence": str(face_confidence),
+        "liveness_status": liveness["status"],
+        "liveness_score": liveness["score"],
+        "liveness_checks": liveness["checks"],
+        "extracted_name": extracted_name,
+        "extracted_id_number": extracted_id,
+        "detected_text_lines": detected_lines,
+    }
+
+    dynamodb.Table(KYC_TABLE).put_item(Item=result)
+    print(
+        f"KYC complete. Session: {session_id} | Status: {status} | "
+        f"Face: {face_confidence}% | Liveness: {liveness['status']} ({liveness['score']}%)"
+    )
+
+    return _response(200, result)
 
 
 def lambda_handler(event, context):
     try:
-        body = json.loads(event.get('body', '{}'))
-        id_image_b64 = body['id_image']
-        selfie_b64 = body['selfie']
+        method = event.get("requestContext", {}).get("http", {}).get("method")
 
-        id_bytes = base64.b64decode(id_image_b64)
-        selfie_bytes = base64.b64decode(selfie_b64)
+        if method == "OPTIONS":
+            return _response(200, {})
 
-        # Upload both images to KYC S3 bucket under a unique session folder
-        session_id = str(uuid.uuid4())
-        id_key = f"sessions/{session_id}/id.jpg"
-        selfie_key = f"sessions/{session_id}/selfie.jpg"
+        if method == "GET":
+            session_id = (event.get("pathParameters") or {}).get("session_id")
+            if not session_id:
+                return _error_response("Missing session_id path parameter.")
+            return _get_session(session_id)
 
-        s3.put_object(Bucket=KYC_BUCKET, Key=id_key, Body=id_bytes)
-        s3.put_object(Bucket=KYC_BUCKET, Key=selfie_key, Body=selfie_bytes)
+        return _verify_kyc(event)
 
-        # Validate faces exist in both images before comparing
-        id_faces = rekognition.detect_faces(
-            Image={'S3Object': {'Bucket': KYC_BUCKET, 'Name': id_key}}
-        )
-        selfie_faces = rekognition.detect_faces(
-            Image={'S3Object': {'Bucket': KYC_BUCKET, 'Name': selfie_key}}
-        )
-        if not id_faces['FaceDetails']:
-            return _error_response("No face detected in ID card image. Use a clear photo ID.")
-        if not selfie_faces['FaceDetails']:
-            return _error_response("No face detected in selfie. Ensure your face is clearly visible.")
-
-        # Extract text from Ghana Card (name, ID number)
-        text_response = rekognition.detect_text(
-            Image={'S3Object': {'Bucket': KYC_BUCKET, 'Name': id_key}}
-        )
-        detected_lines = [
-            t['DetectedText']
-            for t in text_response['TextDetections']
-            if t['Type'] == 'LINE' and t['Confidence'] > 80
-        ]
-        print(f"Detected lines (80%+): {detected_lines}")
-
-        # Lower-confidence LINE pool
-        all_lines = [
-            t['DetectedText']
-            for t in text_response['TextDetections']
-            if t['Type'] == 'LINE' and t['Confidence'] > 50
-        ]
-        print(f"All lines (50%+): {all_lines}")
-
-        # WORD-level detections — used specifically to reconstruct the GHA number
-        # which may be split across multiple words or missed at LINE level
-        all_words = [
-            t['DetectedText']
-            for t in text_response['TextDetections']
-            if t['Type'] == 'WORD' and t['Confidence'] > 40
-        ]
-        print(f"All words (40%+): {all_words}")
-
-        import re
-
-        # Skip card headers and bilingual field labels — Ghana/ECOWAS Card specific
-        skip_keywords = [
-            'GHANA', 'CARD', 'REPUBLIC', 'ECOWAS', 'IDENTIT', 'CEDEAO',
-            'BILREV', 'IDENTIDADE', 'NATIONAL', 'IDENTIFICATION', 'AUTHORITY',
-            'SURNAME', 'FORENAME', 'PERSONAL ID', 'NATIONALITY', 'DATE OF',
-            'PLACE OF', 'DATE OF BIRTH', 'DATE OF ISSUE', 'DATE OF EXPIRY',
-            'DIGITAL SIGNATURE', 'NIA', 'SEX', 'PIN', 'GHA)', 'ACCRA',
-            'PREVIOUS', 'NOMS', 'PRECEDENT', 'NOM DE', 'PRENOM',
-            'LIEU', 'SIGNATURE', 'HEIGHT', 'WEIGHT', 'ISSUANCE',
-            'RESIDENT', 'PROFESSION', 'MARITAL', 'RELIGION', 'CARTE'
-        ]
-
-        def is_header(line):
-            upper = line.upper()
-            # Also treat bilingual lines (containing /) as headers
-            if '/' in line:
-                return True
-            return any(kw in upper for kw in skip_keywords)
-
-        def is_date(line):
-            return bool(re.search(r'\d{2}/\d{2}/\d{4}', line.strip()))
-
-        def is_height_or_noise(line):
-            # Catch values like '1.84', '082139', single letters
-            stripped = line.strip()
-            if re.search(r'^\d+\.\d+$', stripped):
-                return True
-            if re.search(r'^\d{5,}$', stripped):
-                return True
-            if len(stripped) <= 1:
-                return True
-            return False
-
-        def is_id_number(line):
-            upper = line.upper().strip()
-            clean = re.sub(r'[^A-Z0-9]', '', upper.replace('O', '0'))
-            # Ghana NIA format: GHA + 8-10 digits
-            if clean.startswith('GHA') and re.search(r'\d{8,}', clean):
-                return True
-            # ECOWAS / other Ghana card format: 2 letters + 5-9 digits
-            if re.search(r'^[A-Z]{2}\d{5,9}$', clean):
-                return True
-            return False
-
-        # ── Name Extraction ──────────────────────────────────────────────────
-        # Rekognition returns surname and forenames as standalone lines
-        # without labels on this card layout. The order on the card is:
-        # card headers → SURNAME → FORENAMES → other fields
-        # So the first two clean name-like lines are surname then forenames.
-
-        def is_name_line(line):
-            stripped = line.strip()
-            if len(stripped) < 2:
-                return False
-            if is_header(line) or is_date(line) or is_height_or_noise(line):
-                return False
-            if is_id_number(line):
-                return False
-            # Must be mostly letters (names are letters, not mixed with numbers)
-            alpha_ratio = sum(c.isalpha() for c in stripped) / len(stripped)
-            return alpha_ratio >= 0.8
-
-        name_lines = [l for l in detected_lines if is_name_line(l)]
-        print(f"Name candidate lines: {name_lines}")
-
-        if len(name_lines) >= 2:
-            # Ghana/ECOWAS card order: surname first line, forenames second line
-            # Combined as: forenames + surname = "DAVID OSEI KUMI"
-            surname_val  = name_lines[0]
-            forename_val = name_lines[1]
-            extracted_name = forename_val + ' ' + surname_val
-        elif len(name_lines) == 1:
-            extracted_name = name_lines[0]
-        else:
-            # Last resort: take longest alpha line from all_lines pool
-            fallback = [
-                l for l in all_lines
-                if not is_header(l) and not is_date(l)
-                and not is_height_or_noise(l) and '/' not in l
-                and sum(c.isalpha() for c in l) >= 4
-            ]
-            fallback.sort(key=lambda l: sum(c.isalpha() for c in l), reverse=True)
-            extracted_name = fallback[0] if fallback else 'NOT FOUND'
-
-        # ── ID Number Extraction ─────────────────────────────────────────────
-        # The Personal ID Number (GHA-XXXXXXXXX-X) sits next to the height
-        # field on the card. Rekognition sometimes misses it at high confidence.
-        # We use 4 strategies in order of reliability.
-
-        extracted_id = 'NOT FOUND'
-        # Labels that precede ID values on the Ghana/ECOWAS card
-        id_label_keywords = ['PERSONAL ID', 'ID NUMBER', 'DOCUMENT NUMBER', 'NUMERO', 'HUMERO']
-
-        def find_id_after_label(lines):
-            for i, line in enumerate(lines):
-                upper = line.upper()
-                if any(kw in upper for kw in id_label_keywords):
-                    for j in range(i + 1, min(i + 8, len(lines))):
-                        candidate = lines[j]
-                        if is_date(candidate) or is_height_or_noise(candidate):
-                            continue
-                        # Skip if it's another label line (contains /)
-                        if '/' in candidate:
-                            continue
-                        clean = re.sub(r'[^A-Z0-9]', '', candidate.upper().replace('O', '0'))
-                        # Prefer GHA format
-                        if clean.startswith('GHA') and re.search(r'\d{6,}', clean):
-                            return candidate.strip()
-                        # Accept alphanumeric document number (e.g. AR7437976)
-                        if re.search(r'^[A-Z]{1,3}\d{5,}$', clean):
-                            return candidate.strip()
-            return None
-
-        # Strategy 1: GHA number from WORD-level detections
-        gha_word = None
-        for i, word in enumerate(all_words):
-            clean = re.sub(r'[^A-Z0-9]', '', word.upper().replace('O', '0'))
-            if clean.startswith('GHA') and re.search(r'\d{4,}', clean):
-                # Strip any trailing letters that are not digits (e.g. "DOCUMENT")
-                gha_word = re.match(r'(GHA[\d]+)', clean)
-                if gha_word:
-                    gha_word = gha_word.group(1)
-                else:
-                    gha_word = clean
-                break
-        extracted_id = gha_word if gha_word else 'NOT FOUND'
-
-        # Strategy 2: Direct GHA regex scan across all LINE detections
-        if extracted_id == 'NOT FOUND':
-            for line in all_lines:
-                clean = re.sub(r'[^A-Z0-9]', '', line.upper().replace('O', '0'))
-                if clean.startswith('GHA') and re.search(r'\d{8,}', clean):
-                    extracted_id = line.strip()
-                    break
-
-        # Strategy 3: Personal ID Number label search — high confidence lines first
-        if extracted_id == 'NOT FOUND':
-            extracted_id = find_id_after_label(detected_lines) or 'NOT FOUND'
-
-        # Strategy 4: Personal ID Number label search — lower confidence lines
-        if extracted_id == 'NOT FOUND':
-            extracted_id = find_id_after_label(all_lines) or 'NOT FOUND'
-
-        # Strategy 5: Document Number label fallback — last resort
-        if extracted_id == 'NOT FOUND':
-            id_number_lines = [l for l in detected_lines if is_id_number(l)]
-            if id_number_lines:
-                extracted_id = id_number_lines[0]
-
-        print(f"Extracted ID: {extracted_id}")
-
-        # Compare face on Ghana Card vs selfie
-        compare_response = rekognition.compare_faces(
-            SourceImage={'S3Object': {'Bucket': KYC_BUCKET, 'Name': id_key}},
-            TargetImage={'S3Object': {'Bucket': KYC_BUCKET, 'Name': selfie_key}},
-            SimilarityThreshold=70
-        )
-        face_matches = compare_response.get('FaceMatches', [])
-        face_confidence = round(face_matches[0]['Similarity'], 2) if face_matches else 0.0
-
-        # PASS if confidence >= 70% (matches Rekognition's SimilarityThreshold minimum)
-        status = 'PASS' if face_confidence >= 70.0 else 'FAIL'
-
-        result = {
-            'session_id': session_id,
-            'timestamp': datetime.utcnow().isoformat(),
-            'status': status,
-            'face_confidence': str(face_confidence),
-            'extracted_name': extracted_name,
-            'extracted_id_number': extracted_id,
-            'detected_text_lines': detected_lines,
-        }
-
-        dynamodb.Table(KYC_TABLE).put_item(Item=result)
-
-        print(f"KYC complete. Session: {session_id} | Status: {status} | Confidence: {face_confidence}%")
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Content-Type': 'application/json'
-            },
-            'body': json.dumps(result)
-        }
-
+    except ValueError as exc:
+        print(f"KYC validation error: {str(exc)}")
+        return _error_response(str(exc))
     except rekognition.exceptions.InvalidImageFormatException:
         print("KYC error: Invalid image format submitted")
-        return {
-            'statusCode': 400,
-            'headers': {'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'error': 'Unsupported format. Please use JPEG or PNG.'})
-        }
-
-    except Exception as e:
-        print(f"KYC error: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': {'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'error': str(e)})
-        }
+        return _error_response("Unsupported format. Please use JPEG or PNG.")
+    except Exception as exc:
+        print(f"KYC error: {str(exc)}")
+        return _error_response("Verification failed. Check Lambda logs for details.", 500)

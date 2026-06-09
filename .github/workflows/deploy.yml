@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -12,6 +13,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate Lambda Python
+        run: python -m py_compile src/app.py src/kyc_handler.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
