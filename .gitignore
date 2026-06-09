@@ -11,6 +11,9 @@ lambda_function.zip
 __pycache__/
 *.py[cod]
 
+# Local project documents
+docs/
+
 # Claude Code
 .claude/
 
