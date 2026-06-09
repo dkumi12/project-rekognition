@@ -8,3 +8,8 @@ output "frontend_url" {
   value       = "http://${aws_s3_bucket_website_configuration.frontend.website_endpoint}"
   description = "Public URL for the KYC demo frontend"
 }
+
+output "frontend_https_url" {
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  description = "HTTPS URL for camera-enabled frontend access through CloudFront"
+}

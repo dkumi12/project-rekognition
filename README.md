@@ -149,7 +149,8 @@ After Terraform completes, it prints two values:
 
 ```
 kyc_api_endpoint = "https://xxxxxxxx.execute-api.us-east-1.amazonaws.com/kyc"
-frontend_url     = "http://rekkyc-frontend.s3-website-us-east-1.amazonaws.com"
+frontend_url       = "http://rekkyc-frontend.s3-website-us-east-1.amazonaws.com"
+frontend_https_url = "https://xxxxxxxxxxxxxx.cloudfront.net"
 ```
 
 ### Step 5: Update the Frontend API URL
@@ -186,7 +187,7 @@ aws s3 ls s3://rekanalysis-outputs/
 
 **Test 2 - KYC verification:**
 
-Open the `frontend_url` from Step 4 in a browser. Upload a Ghana Card image and a selfie. The system should return a PASS or FAIL verdict with the extracted name, ID number, face match confidence, and liveness check result.
+Open the `frontend_https_url` from Step 4 in a browser when testing live camera capture. Upload a Ghana Card image and capture or upload a selfie. The system should return a PASS or FAIL verdict with the extracted name, ID number, face match confidence, and liveness check result.
 
 ## CI/CD Pipeline
 
@@ -243,7 +244,7 @@ curl https://xxxxxxxx.execute-api.us-east-1.amazonaws.com/kyc/{session_id}
 
 The liveness check is a passive heuristic based on Rekognition `DetectFaces` attributes. It is useful for testing and demos, but it is not the same as AWS's dedicated Face Liveness workflow.
 
-**Camera note:** Browser webcam capture requires a secure context, usually HTTPS or localhost. The default S3 static website endpoint is HTTP, so desktop live camera capture is blocked there by the browser. Mobile users can still use the selfie upload field to open the camera, and desktop live capture will work after hosting the frontend behind HTTPS, such as through CloudFront.
+**Camera note:** Browser webcam capture requires a secure context, usually HTTPS or localhost. Use the CloudFront `frontend_https_url` for desktop live camera capture. The default S3 static website endpoint is HTTP, so browsers block direct webcam access there.
 
 **Note on image quality:** The Personal ID Number (GHA-XXXXXXXXX-X) is printed on the holographic section of the Ghana Card. For best results, photograph the card in good lighting and avoid flash glare on the holographic area. If the GHA number is unreadable, the system falls back to the Document Number printed below it.
 
